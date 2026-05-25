@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gmail Kanban 設定</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="options-shell">
+      <header>
+        <h1>Gmail Kanban</h1>
+        <p id="status">尚未連線</p>
+      </header>
+
+      <section>
+        <h2>Gmail 設定</h2>
+        <p>授權後會建立 gKanban 標籤，讀取收件匣郵件摘要，並用 Gmail 草稿同步 Kanban 設定。</p>
+        <div class="auth-row">
+          <span id="auth-state" class="auth-state auth-state-pending">檢查授權狀態...</span>
+          <button id="authorize" type="button" hidden>授權 Gmail</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>設定同步</h2>
+        <p>看板順序和名稱會存在 Gmail 草稿中的設定 JSON，同一個 Gmail 帳號在其他電腦授權後會自動讀取。</p>
+      </section>
+
+      <section>
+        <h2>目前看板</h2>
+        <ul id="columns"></ul>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

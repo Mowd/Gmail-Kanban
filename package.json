@@ -1,0 +1,10 @@
+{
+  "name": "gmail-kanban",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "A browser extension that turns Gmail inbox mail into a Kanban board.",
+  "scripts": {
+    "check": "node scripts/check.js"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail Kanban",
+  "version": "0.1.0",
+  "description": "Turns Gmail inbox mail into a label-backed Kanban view.",
+  "permissions": [
+    "identity",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://gmail.googleapis.com/*"
+  ],
+  "oauth2": {
+    "client_id": "__REPLACE_WITH_GOOGLE_CHROME_EXTENSION_CLIENT_ID__",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.labels"
+    ]
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": [
+        "content/gmail-kanban.js"
+      ],
+      "css": [
+        "content/gmail-kanban.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "action": {
+    "default_title": "Gmail Kanban",
+    "default_popup": "popup/popup.html"
+  }
+}
