@@ -1469,7 +1469,7 @@
       setStatus("附件已開啟。");
     } catch (error) {
       if (popup) {
-        popup.close();
+        openAttachmentStatusPage(popup, "無法開啟附件", getErrorMessage(error));
       }
       setStatus(`無法開啟附件：${getErrorMessage(error)}`);
     }
@@ -1487,8 +1487,7 @@
     const viewer = mimeType.startsWith("image/")
       ? `<img src="${safeUrl}" alt="${safeFilename}">`
       : `<iframe src="${safeUrl}" title="${safeFilename}"></iframe>`;
-    target.document.open();
-    target.document.write(`<!doctype html>
+    const viewerHtml = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -1510,8 +1509,37 @@
     </header>
     ${viewer}
   </body>
-</html>`);
-    target.document.close();
+</html>`;
+    const viewerUrl = URL.createObjectURL(new Blob([viewerHtml], { type: "text/html" }));
+    target.location.href = viewerUrl;
+    window.setTimeout(() => URL.revokeObjectURL(viewerUrl), 30 * 60 * 1000);
+  }
+
+  function openAttachmentStatusPage(popup, title, message) {
+    const safeTitle = escapeHtml(title);
+    const safeMessage = escapeHtml(message);
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>${safeTitle}</title>
+    <style>
+      body { margin: 0; padding: 24px; color: #202124; background: #f8fafd; font: 14px/1.5 Arial, sans-serif; }
+      main { max-width: 680px; border: 1px solid #d7dde8; border-radius: 8px; padding: 18px; background: #fff; }
+      h1 { margin: 0 0 10px; font-size: 18px; }
+      p { margin: 0; color: #5f6368; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${safeTitle}</h1>
+      <p>${safeMessage}</p>
+    </main>
+  </body>
+</html>`;
+    const statusUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    popup.location.href = statusUrl;
+    window.setTimeout(() => URL.revokeObjectURL(statusUrl), 5 * 60 * 1000);
   }
 
   function downloadAttachment(url, filename) {
