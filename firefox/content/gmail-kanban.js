@@ -1427,7 +1427,7 @@
       name.textContent = attachment.filename || "attachment";
       const meta = document.createElement("span");
       meta.className = "gkanban-attachment-meta";
-      meta.textContent = [attachment.mimeType, formatFileSize(attachment.size)].filter(Boolean).join(" · ");
+      meta.textContent = [getAttachmentMimeType(attachment), formatFileSize(attachment.size)].filter(Boolean).join(" · ");
       text.append(name, meta);
       button.append(icon, text);
       list.appendChild(button);
@@ -1454,14 +1454,18 @@
         throw new Error("Attachment data is empty.");
       }
 
-      const blob = base64UrlToBlob(data, attachment.mimeType || "application/octet-stream");
+      const mimeType = getAttachmentMimeType(attachment);
+      const filename = getAttachmentFilename(attachment);
+      const blob = base64UrlToBlob(data, mimeType);
       const url = URL.createObjectURL(blob);
-      if (popup) {
-        popup.location.href = url;
+
+      if (isPreviewableAttachment(mimeType)) {
+        openAttachmentPreview(popup, url, filename, mimeType);
       } else {
-        window.open(url, "_blank");
+        popup?.close();
+        downloadAttachment(url, filename);
       }
-      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30 * 60 * 1000);
       setStatus("附件已開啟。");
     } catch (error) {
       if (popup) {
@@ -1469,6 +1473,55 @@
       }
       setStatus(`無法開啟附件：${getErrorMessage(error)}`);
     }
+  }
+
+  function openAttachmentPreview(popup, url, filename, mimeType) {
+    const target = popup || window.open("about:blank", "_blank");
+    if (!target) {
+      downloadAttachment(url, filename);
+      return;
+    }
+
+    const safeUrl = escapeHtml(url);
+    const safeFilename = escapeHtml(filename);
+    const viewer = mimeType.startsWith("image/")
+      ? `<img src="${safeUrl}" alt="${safeFilename}">`
+      : `<iframe src="${safeUrl}" title="${safeFilename}"></iframe>`;
+    target.document.open();
+    target.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>${safeFilename}</title>
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; background: #f8fafd; color: #202124; font: 14px Arial, sans-serif; }
+      body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; border-bottom: 1px solid #d7dde8; background: #fff; }
+      strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      a { flex: 0 0 auto; border: 1px solid #c8d1dd; border-radius: 6px; padding: 6px 10px; color: #0b57d0; text-decoration: none; }
+      iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+      img { display: block; max-width: 100%; max-height: 100%; margin: auto; object-fit: contain; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>${safeFilename}</strong>
+      <a href="${safeUrl}" download="${safeFilename}">下載</a>
+    </header>
+    ${viewer}
+  </body>
+</html>`);
+    target.document.close();
+  }
+
+  function downloadAttachment(url, filename) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   function renderComposeBox({ title, textareaId, buttonAction, buttonText, includeRecipient = false }) {
@@ -2037,7 +2090,7 @@
   }
 
   function getAttachmentIcon(attachment) {
-    const mimeType = String(attachment.mimeType || "").toLowerCase();
+    const mimeType = getAttachmentMimeType(attachment);
     const filename = String(attachment.filename || "").toLowerCase();
     if (mimeType.includes("pdf") || filename.endsWith(".pdf")) {
       return "PDF";
@@ -2046,6 +2099,38 @@
       return "IMG";
     }
     return "FILE";
+  }
+
+  function getAttachmentFilename(attachment) {
+    return String(attachment?.filename || "attachment").trim() || "attachment";
+  }
+
+  function getAttachmentMimeType(attachment) {
+    const rawMimeType = String(attachment?.mimeType || "").toLowerCase();
+    const filename = getAttachmentFilename(attachment).toLowerCase();
+    if (filename.endsWith(".pdf") || rawMimeType.includes("pdf")) {
+      return "application/pdf";
+    }
+    if (filename.endsWith(".png")) {
+      return "image/png";
+    }
+    if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) {
+      return "image/jpeg";
+    }
+    if (filename.endsWith(".gif")) {
+      return "image/gif";
+    }
+    if (filename.endsWith(".webp")) {
+      return "image/webp";
+    }
+    if (rawMimeType && rawMimeType !== "application/octet-stream" && rawMimeType !== "binary/octet-stream") {
+      return rawMimeType;
+    }
+    return rawMimeType || "application/octet-stream";
+  }
+
+  function isPreviewableAttachment(mimeType) {
+    return mimeType === "application/pdf" || mimeType.startsWith("image/");
   }
 
   function base64UrlToBlob(value, mimeType) {
