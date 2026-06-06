@@ -274,7 +274,7 @@
   async function deleteColumn(columnId, columnName) {
     const confirmed = window.confirm(`刪除「${columnName}」看板與對應 Gmail label？郵件本身不會被刪除。`);
     if (!confirmed) {
-      return;
+      return false;
     }
 
     try {
@@ -282,8 +282,10 @@
       await sendMessage("GKANBAN_DELETE_COLUMN", { columnId });
       deleteColumnFromState(columnId);
       setStatus("看板已刪除。");
+      return true;
     } catch (error) {
       renderError(error);
+      return false;
     }
   }
 
@@ -805,19 +807,28 @@
     }
 
     const action = button.dataset.action;
+    const columnId = button.dataset.columnId;
+    button.disabled = true;
+    let completed = false;
     try {
       if (action === "delete-column") {
-        await deleteColumn(button.dataset.columnId, button.dataset.columnName);
-        return true;
+        completed = await deleteColumn(columnId, button.dataset.columnName);
+        return completed;
       }
       if (action === "bulk-archive") {
-        return await bulkArchiveColumn(button.dataset.columnId);
+        completed = await bulkArchiveColumn(columnId);
+        return completed;
       }
       if (action === "bulk-trash") {
-        return await bulkTrashColumn(button.dataset.columnId);
+        completed = await bulkTrashColumn(columnId);
+        return completed;
       }
     } catch (error) {
       setStatus(`操作失敗：${getErrorMessage(error)}`);
+    } finally {
+      if (!completed && button.isConnected) {
+        button.disabled = false;
+      }
     }
     return false;
   }

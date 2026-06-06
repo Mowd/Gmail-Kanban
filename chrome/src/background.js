@@ -936,7 +936,7 @@ async function gmailFetch(path, { method = "GET", body, interactive = false, ret
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseJsonResponse(text);
   if (!response.ok) {
     if (shouldRetryRateLimit(response.status, data) && rateRetries > 0) {
       await delay(getRetryDelay(rateRetries));
@@ -1113,7 +1113,10 @@ async function readSettingsDraft({ interactive = false } = {}) {
     return null;
   }
 
-  const payload = JSON.parse(body);
+  const payload = parseSettingsDraftBody(body);
+  if (!payload) {
+    return null;
+  }
   const settings = {
     ...(payload.settings || payload),
     updatedAt: payload.settings?.updatedAt || payload.updatedAt
@@ -1123,6 +1126,15 @@ async function readSettingsDraft({ interactive = false } = {}) {
     settings,
     updatedAt: settings.updatedAt
   };
+}
+
+function parseSettingsDraftBody(body) {
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    console.warn("Ignoring invalid Gmail Kanban settings draft JSON.", error);
+    return null;
+  }
 }
 
 async function upsertSettingsDraft(settings, { interactive = true } = {}) {
@@ -1250,6 +1262,21 @@ function collectAllHeaders(headers) {
     result[String(header.name || "").toLowerCase()] = header.value || "";
   }
   return result;
+}
+
+function parseJsonResponse(text) {
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return {
+      error: {
+        message: text
+      }
+    };
+  }
 }
 
 function normalizeSettings(raw) {

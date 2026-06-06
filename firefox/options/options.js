@@ -42,7 +42,7 @@ function renderAuthState(authorized, reason = "") {
   state.classList.toggle("auth-state-needed", !authorized);
   state.classList.remove("auth-state-pending");
   state.textContent = authorized ? "已授權 Gmail" : "尚未授權 Gmail";
-  state.title = authorized ? "Chrome 可取得 Gmail OAuth token。" : reason;
+  state.title = authorized ? "擴充功能可取得 Gmail OAuth token。" : reason;
   authorizeButton.hidden = authorized;
 }
 

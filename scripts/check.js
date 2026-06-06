@@ -27,6 +27,8 @@ checkDetailPanelDirectHandlers();
 checkMailActionSemantics();
 checkNoRootDelegation();
 checkStaleDomReplacement();
+checkPopupOptionsFallback();
+checkBackgroundRecoveryGuards();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -96,8 +98,8 @@ function checkMailActionSemantics() {
   const requiredSnippets = [
     ["shell controls direct handlers", "function bindShellControls(root)"],
     ["column action direct handler", "async function handleColumnActionButton(button)"],
-    ["bulk archive direct path", "return await bulkArchiveColumn(button.dataset.columnId);"],
-    ["bulk trash direct path", "return await bulkTrashColumn(button.dataset.columnId);"],
+    ["bulk archive direct path", "completed = await bulkArchiveColumn(columnId);"],
+    ["bulk trash direct path", "completed = await bulkTrashColumn(columnId);"],
     ["quick action direct handler", "button.addEventListener(\"click\", (event) => {\n      event.preventDefault();\n      event.stopPropagation();\n      handleQuickMoveButton(button);"],
     ["quick action shared handler", "async function handleQuickMoveButton(button)"],
     ["quick action move path", "return moveMessageWithOptimisticUi(messageId, targetColumnId,"],
@@ -143,6 +145,43 @@ function checkStaleDomReplacement() {
   for (const [name, needle] of requiredSnippets) {
     if (!content.includes(needle)) {
       throw new Error(`Missing stale DOM replacement guard: ${name}.`);
+    }
+  }
+}
+
+function checkPopupOptionsFallback() {
+  const popup = fs.readFileSync("chrome/popup/popup.js", "utf8");
+  const obsoleteDirectHandler = `document.getElementById("options").addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
+});`;
+  if (popup.includes(obsoleteDirectHandler)) {
+    throw new Error("Popup options button must use the background GKANBAN_OPEN_OPTIONS fallback path.");
+  }
+
+  const requiredSnippets = [
+    ["popup options background message", "await sendMessage(\"GKANBAN_OPEN_OPTIONS\");"],
+    ["popup options fallback page", "chrome.runtime.getURL(\"options/options.html\")"],
+    ["popup message helper", "function sendMessage(type, payload = {})"]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!popup.includes(needle)) {
+      throw new Error(`Missing popup options safety guard: ${name}.`);
+    }
+  }
+}
+
+function checkBackgroundRecoveryGuards() {
+  const background = fs.readFileSync("chrome/src/background.js", "utf8");
+  const requiredSnippets = [
+    ["safe Gmail API JSON parsing", "function parseJsonResponse(text)"],
+    ["safe settings draft parsing", "function parseSettingsDraftBody(body)"],
+    ["invalid draft recovery", "Ignoring invalid Gmail Kanban settings draft JSON."]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!background.includes(needle)) {
+      throw new Error(`Missing background recovery guard: ${name}.`);
     }
   }
 }
