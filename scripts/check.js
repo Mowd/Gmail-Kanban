@@ -24,6 +24,7 @@ checkChrome();
 checkFirefox();
 checkSynchronizedFiles();
 checkDetailPanelDirectHandlers();
+checkMailActionSemantics();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -84,6 +85,23 @@ function checkDetailPanelDirectHandlers() {
   for (const [name, needle] of requiredHandlers) {
     if (!content.includes(needle)) {
       throw new Error(`Missing direct ${name} handler in detail panel.`);
+    }
+  }
+}
+
+function checkMailActionSemantics() {
+  const content = fs.readFileSync("chrome/content/gmail-kanban.js", "utf8");
+  const requiredSnippets = [
+    ["quick action direct handler", "button.addEventListener(\"click\", (event) => {\n      event.preventDefault();\n      event.stopPropagation();\n      handleQuickMoveButton(button);"],
+    ["quick action shared handler", "async function handleQuickMoveButton(button)"],
+    ["quick action move path", "return moveMessageWithOptimisticUi(messageId, targetColumnId,"],
+    ["detail archive moves to waiting board", "await moveDetailMessageToSpecialColumn(getArchiveColumn(),"],
+    ["detail delete moves to waiting board", "await moveDetailMessageToSpecialColumn(getDeleteColumn(),"]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!content.includes(needle)) {
+      throw new Error(`Missing or changed mail action semantic: ${name}.`);
     }
   }
 }

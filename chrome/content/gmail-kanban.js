@@ -241,7 +241,7 @@
       await deleteColumn(button.dataset.columnId, button.dataset.columnName);
     }
     if (action === "quick-move") {
-      await quickMoveMessage(button.dataset.messageId, button.dataset.targetColumnId);
+      await handleQuickMoveButton(button);
     }
     if (action === "bulk-archive") {
       await bulkArchiveColumn(button.dataset.columnId);
@@ -1128,7 +1128,40 @@
     button.title = title;
     button.setAttribute("aria-label", title);
     button.appendChild(renderIcon(icon));
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleQuickMoveButton(button);
+    });
     return button;
+  }
+
+  async function handleQuickMoveButton(button) {
+    if (!button || button.disabled) {
+      return false;
+    }
+
+    const messageId = button.dataset.messageId;
+    const targetColumnId = button.dataset.targetColumnId;
+    if (!messageId || !targetColumnId) {
+      setStatus("無法移動郵件：缺少郵件或看板資訊");
+      return false;
+    }
+
+    button.disabled = true;
+    try {
+      const moved = await quickMoveMessage(messageId, targetColumnId);
+      if (!moved && button.isConnected) {
+        button.disabled = false;
+      }
+      return moved;
+    } catch (error) {
+      if (button.isConnected) {
+        button.disabled = false;
+      }
+      setStatus(`無法移動郵件：${getErrorMessage(error)}`);
+      return false;
+    }
   }
 
   function renderIcon(name) {
@@ -1192,10 +1225,10 @@
 
   async function quickMoveMessage(messageId, targetColumnId) {
     if (!messageId || !targetColumnId) {
-      return;
+      return false;
     }
 
-    await moveMessageWithOptimisticUi(messageId, targetColumnId, {
+    return moveMessageWithOptimisticUi(messageId, targetColumnId, {
       pendingStatus: "郵件已移動，正在同步 Gmail...",
       successStatus: "郵件已移動。",
       errorPrefix: "無法移動郵件"
