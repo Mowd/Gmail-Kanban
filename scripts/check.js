@@ -25,6 +25,7 @@ checkFirefox();
 checkSynchronizedFiles();
 checkDetailPanelDirectHandlers();
 checkMailActionSemantics();
+checkNoRootDelegation();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -92,6 +93,10 @@ function checkDetailPanelDirectHandlers() {
 function checkMailActionSemantics() {
   const content = fs.readFileSync("chrome/content/gmail-kanban.js", "utf8");
   const requiredSnippets = [
+    ["shell controls direct handlers", "function bindShellControls(root)"],
+    ["column action direct handler", "async function handleColumnActionButton(button)"],
+    ["bulk archive direct path", "return await bulkArchiveColumn(button.dataset.columnId);"],
+    ["bulk trash direct path", "return await bulkTrashColumn(button.dataset.columnId);"],
     ["quick action direct handler", "button.addEventListener(\"click\", (event) => {\n      event.preventDefault();\n      event.stopPropagation();\n      handleQuickMoveButton(button);"],
     ["quick action shared handler", "async function handleQuickMoveButton(button)"],
     ["quick action move path", "return moveMessageWithOptimisticUi(messageId, targetColumnId,"],
@@ -102,6 +107,25 @@ function checkMailActionSemantics() {
   for (const [name, needle] of requiredSnippets) {
     if (!content.includes(needle)) {
       throw new Error(`Missing or changed mail action semantic: ${name}.`);
+    }
+  }
+}
+
+function checkNoRootDelegation() {
+  const content = fs.readFileSync("chrome/content/gmail-kanban.js", "utf8");
+  const forbiddenSnippets = [
+    "root.addEventListener(\"click\"",
+    "root.addEventListener(\"focusin\"",
+    "root.addEventListener(\"input\"",
+    "function handleRootClick",
+    "function handleRootFocusIn",
+    "function handleRootInput",
+    "event.target.closest(\"button[data-action]\")"
+  ];
+
+  for (const needle of forbiddenSnippets) {
+    if (content.includes(needle)) {
+      throw new Error(`Root-level event delegation is forbidden in content script: ${needle}`);
     }
   }
 }

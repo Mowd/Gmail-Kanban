@@ -133,11 +133,32 @@
       <main id="gkanban-board" class="gkanban-board" aria-live="polite"></main>
       <aside id="gkanban-detail" class="gkanban-detail" hidden></aside>
     `;
-    root.addEventListener("click", handleRootClick);
-    root.addEventListener("focusin", handleRootFocusIn);
-    root.addEventListener("input", handleRootInput);
+    bindShellControls(root);
     document.body.appendChild(root);
     return root;
+  }
+
+  function bindShellControls(root) {
+    root.querySelector("button[data-action='refresh']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await loadBoard({ interactive: false });
+    });
+    root.querySelector("button[data-action='add-column']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await addColumn();
+    });
+    root.querySelector("button[data-action='options']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await sendMessage("GKANBAN_OPEN_OPTIONS");
+    });
+    root.querySelector("button[data-action='close']")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      leaveKanban("inbox");
+    });
   }
 
   function ensureNavLink() {
@@ -215,81 +236,6 @@
 
   function findNavRow(anchor) {
     return anchor.closest("[role='link'], [role='treeitem'], .TO, .TN, .aim, .aio") || anchor.parentElement;
-  }
-
-  async function handleRootClick(event) {
-    const button = event.target.closest("button[data-action]");
-    if (!button) {
-      const card = event.target.closest("[data-open-message]");
-      if (card) {
-        if (Date.now() - state.dragEndedAt < 250) {
-          return;
-        }
-        openMessage(card.dataset.openMessage);
-      }
-      return;
-    }
-
-    const action = button.dataset.action;
-    if (action === "refresh") {
-      await loadBoard({ interactive: false });
-    }
-    if (action === "add-column") {
-      await addColumn();
-    }
-    if (action === "delete-column") {
-      await deleteColumn(button.dataset.columnId, button.dataset.columnName);
-    }
-    if (action === "quick-move") {
-      await handleQuickMoveButton(button);
-    }
-    if (action === "bulk-archive") {
-      await bulkArchiveColumn(button.dataset.columnId);
-    }
-    if (action === "bulk-trash") {
-      await bulkTrashColumn(button.dataset.columnId);
-    }
-    if (action === "options") {
-      await sendMessage("GKANBAN_OPEN_OPTIONS");
-    }
-    if (action === "close") {
-      leaveKanban("inbox");
-    }
-    if (action === "close-detail") {
-      closeDetail();
-    }
-    if (action === "detail-move") {
-      await moveDetailMessage();
-    }
-    if (action === "detail-archive") {
-      await archiveDetailMessage();
-    }
-    if (action === "detail-trash") {
-      await trashDetailMessage();
-    }
-    if (action === "open-attachment") {
-      await openAttachment(Number(button.dataset.attachmentIndex));
-    }
-    if (action === "send-reply") {
-      await sendReply();
-    }
-    if (action === "send-forward") {
-      await sendForward();
-    }
-  }
-
-  function handleRootFocusIn(event) {
-    const textarea = event.target.closest(".gkanban-compose textarea");
-    if (textarea) {
-      expandComposeTextarea(textarea);
-    }
-  }
-
-  function handleRootInput(event) {
-    const textarea = event.target.closest(".gkanban-compose textarea");
-    if (textarea) {
-      expandComposeTextarea(textarea);
-    }
   }
 
   async function addColumn() {
@@ -536,6 +482,11 @@
       deleteButton.dataset.columnName = column.name;
       deleteButton.title = "刪除看板";
       deleteButton.textContent = "刪除";
+      deleteButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleColumnActionButton(deleteButton);
+      });
       actions.appendChild(deleteButton);
     }
     header.append(titleWrap, actions);
@@ -823,7 +774,35 @@
     button.dataset.columnName = column.name;
     button.disabled = disabled || (["bulk-archive", "bulk-trash"].includes(action) && !column.messages.length);
     button.textContent = label;
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleColumnActionButton(button);
+    });
     return button;
+  }
+
+  async function handleColumnActionButton(button) {
+    if (!button || button.disabled) {
+      return false;
+    }
+
+    const action = button.dataset.action;
+    try {
+      if (action === "delete-column") {
+        await deleteColumn(button.dataset.columnId, button.dataset.columnName);
+        return true;
+      }
+      if (action === "bulk-archive") {
+        return await bulkArchiveColumn(button.dataset.columnId);
+      }
+      if (action === "bulk-trash") {
+        return await bulkTrashColumn(button.dataset.columnId);
+      }
+    } catch (error) {
+      setStatus(`操作失敗：${getErrorMessage(error)}`);
+    }
+    return false;
   }
 
   function startColumnRename(columnId) {
@@ -1263,12 +1242,12 @@
   async function bulkArchiveColumn(columnId) {
     const column = getColumnById(columnId);
     if (!column?.messages.length) {
-      return;
+      return false;
     }
 
     const confirmed = window.confirm(`封存「${column.name}」中的 ${column.messages.length} 封郵件？`);
     if (!confirmed) {
-      return;
+      return false;
     }
 
     const messageIds = column.messages.map((message) => message.id);
@@ -1278,20 +1257,22 @@
       removeMessagesFromColumn(columnId, messageIds);
       closeDetailIfIncluded(messageIds);
       setStatus(`已封存 ${messageIds.length} 封郵件。`);
+      return true;
     } catch (error) {
       setStatus(`無法封存郵件：${getErrorMessage(error)}`);
+      return false;
     }
   }
 
   async function bulkTrashColumn(columnId) {
     const column = getColumnById(columnId);
     if (!column?.messages.length) {
-      return;
+      return false;
     }
 
     const confirmed = window.confirm(`將「${column.name}」中的 ${column.messages.length} 封郵件移到垃圾桶？`);
     if (!confirmed) {
-      return;
+      return false;
     }
 
     const messageIds = column.messages.map((message) => message.id);
@@ -1301,8 +1282,10 @@
       removeMessagesFromColumn(columnId, messageIds);
       closeDetailIfIncluded(messageIds);
       setStatus(`已移到垃圾桶 ${messageIds.length} 封郵件。`);
+      return true;
     } catch (error) {
       setStatus(`無法移到垃圾桶：${getErrorMessage(error)}`);
+      return false;
     }
   }
 
@@ -1661,11 +1644,27 @@
     textarea.rows = 1;
     textarea.className = "gkanban-compose-collapsed";
     textarea.placeholder = "輸入內容";
+    textarea.addEventListener("focus", () => {
+      expandComposeTextarea(textarea);
+    });
+    textarea.addEventListener("input", () => {
+      expandComposeTextarea(textarea);
+    });
 
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.action = buttonAction;
     button.textContent = buttonText;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (buttonAction === "send-reply") {
+        await sendReply();
+      }
+      if (buttonAction === "send-forward") {
+        await sendForward();
+      }
+    });
 
     section.append(textarea, button);
     return section;

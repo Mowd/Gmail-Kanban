@@ -19,5 +19,6 @@ Mail action interaction invariants:
 1. The archive and trash icons on uncategorized mail cards must only move mail to the `待封存` and `待刪除` boards. They must not directly call Gmail archive or trash APIs.
 2. The archive and trash icons in the mail detail panel have the same semantics: move to `待封存` or `待刪除`, then open the next message from the original board when available.
 3. The actual Gmail archive/trash API calls belong only to the bulk action buttons on the `待封存` and `待刪除` boards.
-4. Card quick action buttons and detail panel action buttons must have direct click handlers with `preventDefault()` and `stopPropagation()`. Root-level delegation may remain only as fallback.
-5. Any change touching card click, drag/drop, detail panel controls, mail movement, or load-more behavior must manually re-check: card quick archive, card quick delete, detail archive, detail delete, detail close, and attachment open.
+4. Do not use root-level event delegation for extension controls. Buttons, selects, textareas, cards, attachments, and board actions must bind their own event handlers directly when they are created.
+5. Card quick action buttons, bulk board action buttons, and detail panel action buttons must have direct click handlers with `preventDefault()` and `stopPropagation()` where the event could otherwise reach a card, Gmail, or another container.
+6. Any change touching card click, drag/drop, detail panel controls, mail movement, or load-more behavior must manually re-check: card quick archive, card quick delete, `待封存` bulk archive, `待刪除` bulk trash, detail archive, detail delete, detail close, and attachment open.
