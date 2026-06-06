@@ -99,6 +99,7 @@
       state.loadedMessageIds = collectLoadedMessageIds(state.board);
       state.statusNotice = "";
       renderBoard();
+      void maybeAutoLoadMoreForColumn(UNCATEGORIZED_COLUMN_ID);
       startUpdatePolling();
     } catch (error) {
       renderError(error);
@@ -575,7 +576,7 @@
 
   async function loadMoreMessages(triggerColumnId = "") {
     if (state.loadingMore || !state.nextPageToken) {
-      return;
+      return null;
     }
 
     state.loadingMore = true;
@@ -591,12 +592,62 @@
       appendBoardPage(page);
       state.nextPageToken = page.nextPageToken || "";
       updateBoardStatus();
+      return page;
     } catch (error) {
       setStatus(`無法載入更多郵件：${getErrorMessage(error)}`);
+      return null;
     } finally {
       removeLoadMoreIndicators();
       state.loadingMore = false;
     }
+  }
+
+  async function maybeAutoLoadMoreForColumn(columnId) {
+    if (!shouldAutoLoadMoreForColumn(columnId)) {
+      return "";
+    }
+    return loadMoreUntilColumnHasNewMessage(columnId, { maxPages: 3 });
+  }
+
+  function shouldAutoLoadMoreForColumn(columnId) {
+    if (!state.nextPageToken || state.loadingMore || !columnId) {
+      return false;
+    }
+
+    const column = getColumnById(columnId);
+    const list = getColumnListElement(columnId);
+    if (!column || !list) {
+      return false;
+    }
+
+    const renderedCards = list.querySelectorAll(".gkanban-card").length;
+    return renderedCards <= 8 || list.scrollHeight <= list.clientHeight + 240;
+  }
+
+  async function loadMoreUntilColumnHasNewMessage(columnId, { force = false, maxPages = 3 } = {}) {
+    if (!columnId || !state.nextPageToken) {
+      return "";
+    }
+    if (!force && !shouldAutoLoadMoreForColumn(columnId)) {
+      return "";
+    }
+
+    const initialMessageIds = new Set((getColumnById(columnId)?.messages || []).map((message) => message.id));
+    for (let pageIndex = 0; pageIndex < maxPages && state.nextPageToken; pageIndex += 1) {
+      const page = await loadMoreMessages(columnId);
+      if (!page) {
+        return "";
+      }
+
+      const nextMessage = (getColumnById(columnId)?.messages || []).find((message) => {
+        return !initialMessageIds.has(message.id);
+      });
+      if (nextMessage) {
+        return nextMessage.id;
+      }
+    }
+
+    return "";
   }
 
   function showLoadMoreIndicator(columnId) {
@@ -1158,12 +1209,16 @@
       return false;
     }
 
+    const sourceColumnId = sourceColumn.id;
     moveMessageInState(messageId, targetColumnId);
     setStatus(options.pendingStatus || "正在同步 Gmail...");
 
     try {
       await sendMessage("GKANBAN_MOVE_MESSAGE", { messageId, targetColumnId });
       setStatus(options.successStatus || "已同步 Gmail。");
+      if (options.autoLoadMore !== false) {
+        void maybeAutoLoadMoreForColumn(sourceColumnId);
+      }
       return true;
     } catch (error) {
       moveMessageInState(messageId, sourceColumn.id);
@@ -1657,22 +1712,28 @@
       return;
     }
 
+    const sourceColumnId = findMessageColumn(messageId)?.id || "";
     const nextMessageId = getNextMessageIdInCurrentColumn(messageId);
     setDetailActionButtonsDisabled(true);
 
     const moved = await moveMessageWithOptimisticUi(messageId, targetColumn.id, {
       pendingStatus: config.pendingStatus,
       successStatus: config.doneStatus,
-      errorPrefix: config.errorPrefix
+      errorPrefix: config.errorPrefix,
+      autoLoadMore: false
     });
     if (!moved) {
       setDetailActionButtonsDisabled(false);
       return;
     }
 
-    if (nextMessageId) {
+    const nextLoadedMessageId = nextMessageId || await loadMoreUntilColumnHasNewMessage(sourceColumnId, {
+      force: true,
+      maxPages: 4
+    });
+    if (nextLoadedMessageId) {
       setStatus(config.nextStatus);
-      await openMessage(nextMessageId);
+      await openMessage(nextLoadedMessageId);
       setStatus(config.doneStatus);
     } else {
       closeDetail();
