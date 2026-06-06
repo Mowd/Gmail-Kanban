@@ -26,6 +26,7 @@ checkSynchronizedFiles();
 checkDetailPanelDirectHandlers();
 checkMailActionSemantics();
 checkNoRootDelegation();
+checkStaleDomReplacement();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -126,6 +127,22 @@ function checkNoRootDelegation() {
   for (const needle of forbiddenSnippets) {
     if (content.includes(needle)) {
       throw new Error(`Root-level event delegation is forbidden in content script: ${needle}`);
+    }
+  }
+}
+
+function checkStaleDomReplacement() {
+  const content = fs.readFileSync("chrome/content/gmail-kanban.js", "utf8");
+  const requiredSnippets = [
+    ["instance id", "const INSTANCE_ID = String(Math.random()).slice(2);"],
+    ["shell stale instance removal", "root.dataset.gkanbanInstanceId === INSTANCE_ID"],
+    ["nav stale instance removal", "navLink && navLink.dataset.gkanbanInstanceId !== INSTANCE_ID"],
+    ["launcher stale instance removal", "launcher && launcher.dataset.gkanbanInstanceId !== INSTANCE_ID"]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!content.includes(needle)) {
+      throw new Error(`Missing stale DOM replacement guard: ${name}.`);
     }
   }
 }

@@ -13,6 +13,7 @@
   const NAV_ID = "gkanban-nav-link";
   const LAUNCHER_ID = "gkanban-launcher";
   const FALLBACK_NAV_CLASS = "gkanban-nav-fallback";
+  const INSTANCE_ID = String(Math.random()).slice(2);
   const state = {
     board: null,
     detailMessage: null,
@@ -111,11 +112,15 @@
   function ensureShell() {
     let root = document.getElementById(ROOT_ID);
     if (root) {
-      return root;
+      if (root.dataset.gkanbanInstanceId === INSTANCE_ID) {
+        return root;
+      }
+      root.remove();
     }
 
     root = document.createElement("section");
     root.id = ROOT_ID;
+    root.dataset.gkanbanInstanceId = INSTANCE_ID;
     root.hidden = true;
     root.innerHTML = `
       <header class="gkanban-header">
@@ -170,9 +175,15 @@
     const inboxAnchor = findInboxAnchor();
     const targetRow = inboxAnchor ? findNavRow(inboxAnchor) : null;
 
+    if (navLink && navLink.dataset.gkanbanInstanceId !== INSTANCE_ID) {
+      navLink.remove();
+      navLink = null;
+    }
+
     if (!navLink) {
       navLink = document.createElement("button");
       navLink.id = NAV_ID;
+      navLink.dataset.gkanbanInstanceId = INSTANCE_ID;
       navLink.type = "button";
       navLink.className = "gkanban-nav-link";
       navLink.textContent = "Kanban";
@@ -201,9 +212,15 @@
     }
 
     let launcher = document.getElementById(LAUNCHER_ID);
+    if (launcher && launcher.dataset.gkanbanInstanceId !== INSTANCE_ID) {
+      launcher.remove();
+      launcher = null;
+    }
+
     if (!launcher) {
       launcher = document.createElement("button");
       launcher.id = LAUNCHER_ID;
+      launcher.dataset.gkanbanInstanceId = INSTANCE_ID;
       launcher.type = "button";
       launcher.className = "gkanban-launcher";
       launcher.textContent = "Kanban";
