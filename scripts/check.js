@@ -29,6 +29,7 @@ checkNoRootDelegation();
 checkStaleDomReplacement();
 checkPopupOptionsFallback();
 checkBackgroundRecoveryGuards();
+checkLegacyLabelRecovery();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -182,6 +183,23 @@ function checkBackgroundRecoveryGuards() {
   for (const [name, needle] of requiredSnippets) {
     if (!background.includes(needle)) {
       throw new Error(`Missing background recovery guard: ${name}.`);
+    }
+  }
+}
+
+function checkLegacyLabelRecovery() {
+  const background = fs.readFileSync("chrome/src/background.js", "utf8");
+  const requiredSnippets = [
+    ["label alias map", "function buildLabelIdsByColumn(columns)"],
+    ["column alias ids", "function getColumnLabelIds(column)"],
+    ["legacy root match", "function getManagedColumnLabelMatch(labelName, rootLabelName)"],
+    ["legacy label alias", "updatedColumn.aliasLabelIds = aliasLabelIds;"],
+    ["move removes aliases", ".flatMap((column) => getColumnLabelIds(column))"]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!background.includes(needle)) {
+      throw new Error(`Missing legacy label recovery behavior: ${name}.`);
     }
   }
 }

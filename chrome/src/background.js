@@ -127,7 +127,7 @@ async function getAuthStatus() {
 
 async function getBoard({ interactive = false, maxResults = DEFAULT_PAGE_SIZE, pageToken = "" } = {}) {
   const settings = await ensureGmailSetup({ interactive });
-  const labelIdsByColumn = new Map(settings.columns.map((column) => [column.labelId, column]));
+  const labelIdsByColumn = buildLabelIdsByColumn(settings.columns);
   const inboxResult = await listInboxMessages({ interactive, maxResults, pageToken });
   const inboxMessages = inboxResult.messages;
   const boardColumns = [
@@ -153,6 +153,21 @@ async function getBoard({ interactive = false, maxResults = DEFAULT_PAGE_SIZE, p
     nextPageToken: inboxResult.nextPageToken,
     fetchedAt: new Date().toISOString()
   };
+}
+
+function buildLabelIdsByColumn(columns) {
+  const labelIdsByColumn = new Map();
+  for (const column of columns || []) {
+    for (const labelId of getColumnLabelIds(column)) {
+      labelIdsByColumn.set(labelId, column);
+    }
+  }
+  return labelIdsByColumn;
+}
+
+function getColumnLabelIds(column) {
+  const aliasLabelIds = Array.isArray(column?.aliasLabelIds) ? column.aliasLabelIds : [];
+  return [...new Set([column?.labelId, ...aliasLabelIds].filter(Boolean))];
 }
 
 async function ensureGmailSetup({ interactive = false } = {}) {
@@ -185,7 +200,15 @@ async function ensureGmailSetup({ interactive = false } = {}) {
       label = await createLabel(labelName, { interactive });
       labelsByName.set(label.name, label);
     }
+    const legacyLabelName = `${LEGACY_ROOT_LABEL_NAME}/${column.name}`;
+    const legacyLabel = legacyLabelName === labelName ? null : labelsByName.get(legacyLabelName);
+    const aliasLabelIds = legacyLabel && legacyLabel.id !== label.id ? [legacyLabel.id] : [];
     const updatedColumn = { ...column, labelId: label.id, labelName };
+    if (aliasLabelIds.length) {
+      updatedColumn.aliasLabelIds = aliasLabelIds;
+    } else {
+      delete updatedColumn.aliasLabelIds;
+    }
     columns.push(updatedColumn);
     if (column.labelId !== updatedColumn.labelId || column.labelName !== updatedColumn.labelName) {
       changed = true;
@@ -242,30 +265,26 @@ async function getSyncedSettings({ interactive = false } = {}) {
 }
 
 function recoverColumnsFromLabels(labels, settings) {
-  const prefix = `${settings.rootLabelName}/`;
   const columnsByName = new Map((settings.columns || []).map((column) => [column.name, column]));
-  const recovered = [];
+  const recoveredByName = new Map();
   const seenNames = new Set();
 
   for (const label of labels) {
     const labelName = String(label.name || "");
-    if (!labelName.startsWith(prefix)) {
+    const match = getManagedColumnLabelMatch(labelName, settings.rootLabelName);
+    if (!match) {
       continue;
     }
 
-    const columnName = labelName.slice(prefix.length).trim();
-    if (!columnName || columnName.includes("/")) {
-      continue;
-    }
-
+    const columnName = match.columnName;
     const key = columnName.toLocaleLowerCase();
-    if (seenNames.has(key)) {
+    if (seenNames.has(key) && !match.currentRoot) {
       continue;
     }
     seenNames.add(key);
 
     const existing = columnsByName.get(columnName) || getDefaultColumnByName(columnName);
-    recovered.push({
+    recoveredByName.set(key, {
       id: existing?.id || `label-${label.id}`,
       name: columnName,
       builtIn: Boolean(existing?.builtIn),
@@ -274,7 +293,32 @@ function recoverColumnsFromLabels(labels, settings) {
     });
   }
 
-  return orderRecoveredColumns(recovered, settings.columns || []);
+  return orderRecoveredColumns([...recoveredByName.values()], settings.columns || []);
+}
+
+function getManagedColumnLabelMatch(labelName, rootLabelName) {
+  const rootNames = [rootLabelName];
+  if (LEGACY_ROOT_LABEL_NAME !== rootLabelName) {
+    rootNames.push(LEGACY_ROOT_LABEL_NAME);
+  }
+
+  for (const rootName of rootNames) {
+    const prefix = `${rootName}/`;
+    if (!labelName.startsWith(prefix)) {
+      continue;
+    }
+
+    const columnName = labelName.slice(prefix.length).trim();
+    if (!columnName || columnName.includes("/")) {
+      return null;
+    }
+    return {
+      columnName,
+      currentRoot: rootName === rootLabelName
+    };
+  }
+
+  return null;
 }
 
 function shouldUseRecoveredColumns(settingsColumns, recoveredColumns) {
@@ -452,7 +496,7 @@ async function moveMessage(messageId, targetColumnId) {
   const addLabelIds = targetColumn ? [targetColumn.labelId] : [];
   const addLabelIdSet = new Set(addLabelIds);
   const removeLabelIds = settings.columns
-    .map((column) => column.labelId)
+    .flatMap((column) => getColumnLabelIds(column))
     .filter((labelId) => labelId && !addLabelIdSet.has(labelId));
 
   if (targetColumnId !== UNCATEGORIZED_COLUMN_ID && !targetColumn) {
