@@ -8,6 +8,7 @@ const SETTINGS_DRAFT_HEADER = "X-Gmail-Kanban-Settings";
 const SETTINGS_DRAFT_TO = "gkanban-settings@local.invalid";
 const DEFAULT_PAGE_SIZE = 80;
 const GMAIL_LIST_PAGE_SIZE = 100;
+const COLUMN_SEED_PAGE_SIZE = 20;
 const MESSAGE_FETCH_CONCURRENCY = 4;
 const FIREFOX_TOKEN_KEY = "gkanban.firefox.oauth";
 const FIREFOX_OAUTH_CLIENT_ID =
@@ -129,30 +130,73 @@ async function getBoard({ interactive = false, maxResults = DEFAULT_PAGE_SIZE, p
   const settings = await ensureGmailSetup({ interactive });
   const labelIdsByColumn = buildLabelIdsByColumn(settings.columns);
   const inboxResult = await listInboxMessages({ interactive, maxResults, pageToken });
-  const inboxMessages = inboxResult.messages;
+  const loadedMessageIds = new Set();
   const boardColumns = [
     { id: UNCATEGORIZED_COLUMN_ID, name: "未分類", virtual: true, messages: [] },
     ...settings.columns.map((column) => ({ ...column, messages: [] }))
   ];
   const boardColumnById = new Map(boardColumns.map((column) => [column.id, column]));
 
-  for (const message of inboxMessages) {
-    const assignedColumn = (message.labelIds || [])
-      .map((labelId) => labelIdsByColumn.get(labelId))
-      .find(Boolean);
-    const columnId = assignedColumn?.id || UNCATEGORIZED_COLUMN_ID;
-    boardColumnById.get(columnId)?.messages.push(message);
+  for (const message of inboxResult.messages) {
+    addMessageToBoard(message, boardColumnById, labelIdsByColumn, loadedMessageIds);
+  }
+
+  if (!pageToken) {
+    await seedEmptyCategorizedColumns({
+      settingsColumns: settings.columns,
+      boardColumnById,
+      labelIdsByColumn,
+      loadedMessageIds,
+      interactive
+    });
   }
 
   return {
     rootLabelName: settings.rootLabelName,
     columns: boardColumns,
     columnRows: normalizeColumnRows(settings.columnRows, settings.columns),
-    loadedMessageCount: inboxMessages.length,
+    loadedMessageCount: loadedMessageIds.size,
     resultSizeEstimate: inboxResult.resultSizeEstimate,
     nextPageToken: inboxResult.nextPageToken,
     fetchedAt: new Date().toISOString()
   };
+}
+
+function addMessageToBoard(message, boardColumnById, labelIdsByColumn, loadedMessageIds) {
+  if (!message?.id || loadedMessageIds.has(message.id)) {
+    return false;
+  }
+
+  const assignedColumn = (message.labelIds || [])
+    .map((labelId) => labelIdsByColumn.get(labelId))
+    .find(Boolean);
+  const columnId = assignedColumn?.id || UNCATEGORIZED_COLUMN_ID;
+  boardColumnById.get(columnId)?.messages.push(message);
+  loadedMessageIds.add(message.id);
+  return true;
+}
+
+async function seedEmptyCategorizedColumns({
+  settingsColumns,
+  boardColumnById,
+  labelIdsByColumn,
+  loadedMessageIds,
+  interactive
+}) {
+  for (const column of settingsColumns) {
+    const boardColumn = boardColumnById.get(column.id);
+    if (!boardColumn || boardColumn.messages.length) {
+      continue;
+    }
+
+    const messages = await listInboxMessagesForColumn(column, {
+      interactive,
+      maxResults: COLUMN_SEED_PAGE_SIZE
+    });
+    for (const message of messages) {
+      addMessageToBoard(message, boardColumnById, labelIdsByColumn, loadedMessageIds);
+    }
+  }
 }
 
 function buildLabelIdsByColumn(columns) {
@@ -711,6 +755,43 @@ async function importSettings(payload) {
 }
 
 async function listInboxMessages({ interactive = false, maxResults = DEFAULT_PAGE_SIZE, pageToken = "" } = {}) {
+  return listMessagesByLabelIds({
+    labelIds: ["INBOX"],
+    interactive,
+    maxResults,
+    pageToken
+  });
+}
+
+async function listInboxMessagesForColumn(column, { interactive = false, maxResults = COLUMN_SEED_PAGE_SIZE } = {}) {
+  const messagesById = new Map();
+  for (const labelId of getColumnLabelIds(column)) {
+    const page = await listMessagesByLabelIds({
+      labelIds: ["INBOX", labelId],
+      interactive,
+      maxResults
+    });
+    for (const message of page.messages) {
+      if (!messagesById.has(message.id)) {
+        messagesById.set(message.id, message);
+      }
+      if (messagesById.size >= maxResults) {
+        break;
+      }
+    }
+    if (messagesById.size >= maxResults) {
+      break;
+    }
+  }
+  return [...messagesById.values()];
+}
+
+async function listMessagesByLabelIds({
+  labelIds = ["INBOX"],
+  interactive = false,
+  maxResults = DEFAULT_PAGE_SIZE,
+  pageToken = ""
+} = {}) {
   const limit = normalizeMaxResults(maxResults);
   const messages = [];
   let resultSizeEstimate = 0;
@@ -723,9 +804,11 @@ async function listInboxMessages({ interactive = false, maxResults = DEFAULT_PAG
     }
 
     const query = new URLSearchParams({
-      labelIds: "INBOX",
       maxResults: String(Math.min(GMAIL_LIST_PAGE_SIZE, remaining))
     });
+    for (const labelId of labelIds) {
+      query.append("labelIds", labelId);
+    }
     if (nextPageToken) {
       query.set("pageToken", nextPageToken);
     }

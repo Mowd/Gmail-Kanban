@@ -30,6 +30,7 @@ checkStaleDomReplacement();
 checkPopupOptionsFallback();
 checkBackgroundRecoveryGuards();
 checkLegacyLabelRecovery();
+checkCategorizedColumnSeeding();
 console.log("Chrome and Firefox extension files look valid.");
 
 function checkChrome() {
@@ -200,6 +201,23 @@ function checkLegacyLabelRecovery() {
   for (const [name, needle] of requiredSnippets) {
     if (!background.includes(needle)) {
       throw new Error(`Missing legacy label recovery behavior: ${name}.`);
+    }
+  }
+}
+
+function checkCategorizedColumnSeeding() {
+  const background = fs.readFileSync("chrome/src/background.js", "utf8");
+  const requiredSnippets = [
+    ["column seed page size", "const COLUMN_SEED_PAGE_SIZE = 20;"],
+    ["empty categorized column seeding", "async function seedEmptyCategorizedColumns"],
+    ["column inbox label query", "async function listInboxMessagesForColumn"],
+    ["multi-label Gmail list", "function listMessagesByLabelIds"],
+    ["INBOX plus board label", "labelIds: [\"INBOX\", labelId]"]
+  ];
+
+  for (const [name, needle] of requiredSnippets) {
+    if (!background.includes(needle)) {
+      throw new Error(`Missing categorized column seed behavior: ${name}.`);
     }
   }
 }
